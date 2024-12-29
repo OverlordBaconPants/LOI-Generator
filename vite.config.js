@@ -9,4 +9,14 @@ export default defineConfig({
       '@': path.resolve(__dirname, './src'),
     },
   },
+  // Add base URL configuration for deployment
+  base: '/',
+  build: {
+    // Generate sourcemaps for better debugging
+    sourcemap: true,
+    // Optimize build
+    minify: 'terser',
+    // Configure output directory
+    outDir: 'dist',
+  }
 })
