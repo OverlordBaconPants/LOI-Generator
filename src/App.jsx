@@ -3,121 +3,139 @@ import Papa from 'papaparse';
 import { Table } from './components/ui/table';
 import { Button } from './components/ui/button';
 import { Card } from './components/ui/card';
-import { FileText, Download } from 'lucide-react';
+import { FileText } from 'lucide-react';
 
-// LOI Strategy Templates
-const LOI_TEMPLATES = {
-  'Seller Financing': (property) => `
-Dear ${property.MLS_Curr_ListAgentName},
-
-I'm writing regarding your listing at ${property.PropertyAddress}. Based on our analysis, this property has substantial equity with an LTV of ${property.LTV}, making it an excellent candidate for seller financing. This approach could provide your client with steady monthly income while potentially achieving a higher sale price than a traditional cash offer.
-
-The property's current assessed value of ${property.AssessedTotal} and its characteristics (${property.Beds} beds/${property.Baths} baths) make it an attractive investment opportunity. With seller financing, we can offer terms that would generate reliable monthly income for your client while ensuring you receive your full commission at closing.
-
-Would you be open to discussing how a seller-financed arrangement could benefit both your client and you? I'm available at your convenience to explore this opportunity further.`,
-
-  'Subject-to': (property) => `
-Dear ${property.MLS_Curr_ListAgentName},
-
-I'm reaching out about ${property.PropertyAddress}. We've identified this property as a potential candidate for a subject-to purchase, which could provide an expedited closing while addressing the existing financing of ${property.TotalLoans}.
-
-This approach would allow us to take over the current mortgage payments while ensuring a clean transition for your client. Your commission would be secured at closing, and your client could move forward without the typical delays associated with traditional financing.
-
-Would you be interested in discussing how this structure could benefit your client? I'm happy to explain the process in detail and explore how we can make this work for all parties involved.`,
-
-  'Hybrid': (property) => `
-Dear ${property.MLS_Curr_ListAgentName},
-
-I'm writing regarding your listing at ${property.PropertyAddress}. We've analyzed this property's unique position with an LTV of ${property.LTV} and believe a hybrid purchase structure could maximize value for your client while ensuring a smooth transaction.
-
-Our proposed approach would combine taking over the existing financing of ${property.TotalLoans} with additional seller financing for the remaining equity portion. This structure could provide your client with both immediate relief from their current mortgage obligations and an ongoing income stream, all while ensuring your full commission at closing.
-
-Would you be open to discussing how this creative solution could benefit both your client and you? I'm available to explain the details and explore how we can make this work for everyone involved.`
+const getFirstName = (fullName) => {
+  if (!fullName) return '';
+  return fullName.split(' ')[0];
 };
 
-// Helper function to determine LOI strategy based on LTV
-const determineLOIStrategy = (ltv) => {
-  if (!ltv) return 'Unknown';
-  // Handle if LTV is already a number
-  if (typeof ltv === 'number') {
-    if (ltv <= 25) return 'Seller Financing';
-    if (ltv <= 75) return 'Hybrid';
-    return 'Subject-to';
+const getShortAddress = (fullAddress) => {
+  if (!fullAddress) return '';
+  const parts = fullAddress.split(',')[0];
+  const unitIndex = parts.toLowerCase().indexOf('unit');
+  const aptIndex = parts.toLowerCase().indexOf('apt');
+  let addressWithoutUnit = parts;
+  
+  if (unitIndex > -1) {
+    addressWithoutUnit = parts.substring(0, unitIndex).trim();
+  } else if (aptIndex > -1) {
+    addressWithoutUnit = parts.substring(0, aptIndex).trim();
   }
-  // Handle string values
-  const ltvString = String(ltv).trim();
-  if (!ltvString) return 'Unknown';
   
-  // Remove any % symbol and convert to number
-  const ltvNumber = parseFloat(ltvString.replace('%', ''));
-  if (isNaN(ltvNumber)) return 'Unknown';
-  
-  if (ltvNumber <= 25) return 'Seller Financing';
-  if (ltvNumber <= 75) return 'Hybrid';
-  return 'Subject-to';
+  return addressWithoutUnit.split(' ').slice(1).join(' '); // Remove house number
 };
 
-// Main component
+const formatCurrency = (amount) => {
+  if (!amount) return '$0';
+  if (typeof amount === 'string') {
+    amount = parseFloat(amount.replace(/[$,]/g, ''));
+  }
+  return amount.toLocaleString('en-US', {
+    style: 'currency',
+    currency: 'USD',
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 0
+  });
+};
+
+const roundToThousand = (amount) => {
+  if (!amount) return 0;
+  if (typeof amount === 'string') {
+    amount = parseFloat(amount.replace(/[$,]/g, ''));
+  }
+  return Math.floor(amount / 1000) * 1000;
+};
+
+const calculateLTV = (mortgageBalance, listPrice) => {
+  if (!mortgageBalance || !listPrice) return 0;
+  const balance = typeof mortgageBalance === 'string' ? 
+    parseFloat(mortgageBalance.replace(/[$,]/g, '')) : mortgageBalance;
+  return (balance / listPrice) * 100;
+};
+
+const generateLOI = (property) => {
+  const agentFirstName = getFirstName(property.MLS_Curr_ListAgentName);
+  const shortAddress = getShortAddress(property.PropertyAddress);
+  const roundedBalance = roundToThousand(property.EstimatedMortgageBalance);
+  const ltv = calculateLTV(property.EstimatedMortgageBalance, property.MLS_Curr_ListPrice);
+  
+  // No mortgage balance template
+  if (roundedBalance === 0) {
+    return `Hey ${agentFirstName},
+
+Are you still trying to sell the house on ${shortAddress}? I think ${formatCurrency(property.MLS_Curr_ListPrice)} sounds pretty reasonable for it. Would your seller be open to a conversation about possibly selling on terms? Most of the other houses I've bought in this area, I gave the seller a down payment and paid them over time. I pay for agent commissions and closing costs typically as well.
+
+Is this possibly worth a further conversation, or am I being completely unreasonable?
+
+Thanks,
+StudentName`;
+  }
+  
+  // Low equity template
+  if (ltv > 90) {
+    return `Hey ${agentFirstName},
+
+Are you still trying to sell the house on ${shortAddress}? From what I can see online, it looks like your seller has a remaining mortgage balance of about ${formatCurrency(roundedBalance)}. With how tough the market is right now, it seems like it might be hard for them to sell this without coming out of pocket. If I could pay for all closing costs (including your commission) and pay some cash to them, do you think we could have a conversation about how my process works?
+
+Or am I being completely unreasonable?
+
+Thanks,
+StudentName`;
+  }
+  
+  // Standard template
+  return `Hey ${agentFirstName},
+
+Are you still trying to sell the house on ${shortAddress}? From what I can see online, it looks like I could probably pay ${formatCurrency(property.MLS_Curr_ListPrice)} for it.
+I'm a local investor, and I've worked with other sellers in ${property.PropertyCity} who were able to sell to me on terms that made sense for them. Basically how it works is I cover all closing costs (including your commission), pay them some cash upfront, and pay out their equity over time. Do you think it'd be worth having a quick chat about how my process could work for them?
+
+Or am I way off base here?
+
+Thanks,
+StudentName`;
+};
+
 export default function LOIGenerator() {
   const [data, setData] = useState([]);
   const [currentPage, setCurrentPage] = useState(1);
   const [itemsPerPage] = useState(10);
 
-  // Handle file upload
   const handleFileUpload = (event) => {
     const file = event.target.files[0];
     Papa.parse(file, {
       header: true,
-      dynamicTyping: true, // Convert numeric values automatically
+      dynamicTyping: true,
       skipEmptyLines: true,
       complete: (results) => {
         const processedData = results.data
-          .filter(row => row && typeof row === 'object') // Filter out null/undefined rows
+          .filter(row => row && typeof row === 'object')
           .map(row => ({
             ...row,
-            loiStrategy: determineLOIStrategy(row.LTV),
-            bedsBaths: `${row.Beds || 'N/A'}/${row.Baths || 'N/A'}`,
-            PropertyAddress: row.PropertyAddress || 'No Address',
-            AssessedTotal: row.AssessedTotal || 'N/A',
-            TotalLoans: row.TotalLoans || 'N/A',
-            LTV: row.LTV || 'N/A',
-            MLS_Curr_ListAgentName: row.MLS_Curr_ListAgentName || 'No Agent Listed',
-            MLS_Curr_ListAgentEmail: row.MLS_Curr_ListAgentEmail || 'No Email Listed'
+            ltv: calculateLTV(row.EstimatedMortgageBalance, row.MLS_Curr_ListPrice),
+            roundedBalance: roundToThousand(row.EstimatedMortgageBalance)
           }));
         setData(processedData);
-        
-        // Log the first row to help with debugging
-        if (processedData.length > 0) {
-          console.log('First row of processed data:', processedData[0]);
-        }
       },
       error: (error) => {
         console.error('Error parsing CSV:', error);
-        // You might want to show this error to the user in the UI
       }
     });
   };
 
-  // Generate LOI content
-  const generateLOI = (property) => {
-    return LOI_TEMPLATES[property.loiStrategy](property);
-  };
-
-  // Download LOI as text file
   const downloadLOI = (property) => {
     const content = generateLOI(property);
     const blob = new Blob([content], { type: 'text/plain' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `LOI_${property.PropertyAddress.replace(/[^a-z0-9]/gi, '_')}.txt`;
+    a.download = `LOI_${getShortAddress(property.PropertyAddress).replace(/[^a-z0-9]/gi, '_')}.txt`;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
   };
 
-  // Pagination
   const indexOfLastItem = currentPage * itemsPerPage;
   const indexOfFirstItem = indexOfLastItem - itemsPerPage;
   const currentItems = data.slice(indexOfFirstItem, indexOfLastItem);
@@ -147,28 +165,22 @@ export default function LOIGenerator() {
             <Table>
               <thead>
                 <tr>
-                  <th className="p-2">Property Address</th>
-                  <th className="p-2">Beds/Baths</th>
-                  <th className="p-2">Assessed Value</th>
-                  <th className="p-2">Total Loans</th>
+                  <th className="p-2">Address</th>
+                  <th className="p-2">List Price</th>
+                  <th className="p-2">Mortgage Balance</th>
                   <th className="p-2">LTV</th>
-                  <th className="p-2">LOI Strategy</th>
                   <th className="p-2">Agent</th>
-                  <th className="p-2">Email</th>
                   <th className="p-2">Actions</th>
                 </tr>
               </thead>
               <tbody>
                 {currentItems.map((property, index) => (
                   <tr key={index} className="border-t">
-                    <td className="p-2">{property.PropertyAddress}</td>
-                    <td className="p-2">{property.bedsBaths}</td>
-                    <td className="p-2">{property.AssessedTotal}</td>
-                    <td className="p-2">{property.TotalLoans}</td>
-                    <td className="p-2">{property.LTV}</td>
-                    <td className="p-2">{property.loiStrategy}</td>
-                    <td className="p-2">{property.MLS_Curr_ListAgentName}</td>
-                    <td className="p-2">{property.MLS_Curr_ListAgentEmail}</td>
+                    <td className="p-2">{getShortAddress(property.PropertyAddress)}</td>
+                    <td className="p-2">{formatCurrency(property.MLS_Curr_ListPrice)}</td>
+                    <td className="p-2">{formatCurrency(property.roundedBalance)}</td>
+                    <td className="p-2">{property.ltv.toFixed(1)}%</td>
+                    <td className="p-2">{getFirstName(property.MLS_Curr_ListAgentName)}</td>
                     <td className="p-2">
                       <Button
                         onClick={() => downloadLOI(property)}
