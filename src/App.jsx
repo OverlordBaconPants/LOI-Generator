@@ -174,7 +174,11 @@ const downloadProcessedCSV = (originalData, processedData) => {
   
   const enrichedData = originalData.map((row, index) => ({
     ...row,
-    LOI_Version: `${processedData[index].templateType} ${processedData[index].loiVersion}`
+    LOI_Version: `${processedData[index].templateType} ${processedData[index].loiVersion}`,
+    LOI_Text: generateLOI({
+      ...row,
+      loiVersion: processedData[index].loiVersion
+    })
   }));
   
   const csv = Papa.unparse(enrichedData);
@@ -264,7 +268,7 @@ export default function LOIGenerator() {
               className="flex items-center gap-2"
             >
               <Download className="w-4 h-4" />
-              <span>Download CSV with LOI Versions Attached</span>
+              <span>Download CSV with LOI Versions and Wording Attached</span>
             </Button>
           )}
         </div>
